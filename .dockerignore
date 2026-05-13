@@ -1,0 +1,35 @@
+# CI/CD and VCS
+.github/
+.git
+.git/**
+.gitignore
+.gitattributes
+.gitmodules
+
+# Documentation
+README*.md
+*.md
+
+# Configuration (non-build)
+readme-vars.yml
+.editorconfig
+
+# Development and examples
+debian/
+oneoff/
+local/
+.local/
+
+# Build artifacts
+*.o
+*.so
+*.a
+*.sh
+!root/usr/local/bin/*.sh
+*.log
+.tmp-config/
+tmp/
+
+# Assets (include in image)
+!logo.png
+!LICENSE

@@ -1,0 +1,33 @@
+version: '2.4'
+
+services:
+  mlat-server:
+    image: docker.io/blackoutmode/mlat-server:latest
+    container_name: mlat-server
+    environment:
+      TZ: Etc/UTC
+      MLAT_SERVER_CLIENT_LISTEN: '31090'
+      MLAT_SERVER_FILTERED_BASESTATION_LISTEN: '31003'
+      MLAT_SERVER_BASESTATION_LISTEN: '31004'
+      MLAT_SERVER_WORK_DIR: '/config/work'
+      MLAT_SERVER_TAG: 'mlat-server'
+      MLAT_SERVER_STATUS_INTERVAL: '15'
+      MLAT_SERVER_MOTD: 'Welcome to this Mode S multilateration server'
+      LOG_LEVEL: 'info'              # debug | info | warn | error | fatal
+    ports:
+      - '31090:31090/tcp'
+      - '31090:31090/udp'
+      - '31003:31003/tcp'
+      - '31004:31004/tcp'
+    volumes:
+      - mlat-server-config:/config
+    labels:
+      io.balena.features.supervisor-api: '1'
+      io.balena.features.balena-api: '1'
+    tmpfs:
+      - /tmp
+      - /run:exec
+    restart: unless-stopped
+
+volumes:
+  mlat-server-config:

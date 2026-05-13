@@ -1,0 +1,139 @@
+name: Upstream Release Monitor
+
+on:
+  schedule:
+    # Run every 6 hours
+    - cron: '0 */6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+env:
+  UPSTREAM_REPO: wiedehopf/mlat-server
+  TRACK_FILE: .github/upstream/mlat-server-master.json
+  BRANCH: master
+
+jobs:
+  check-upstream:
+    runs-on: ubuntu-latest
+    outputs:
+      has_update: ${{ steps.compare.outputs.has_update }}
+      new_version: ${{ steps.compare.outputs.new_version }}
+      new_commit: ${{ steps.compare.outputs.new_commit }}
+      old_version: ${{ steps.compare.outputs.old_version }}
+      old_commit: ${{ steps.compare.outputs.old_commit }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Read tracked upstream state
+        id: tracked
+        run: |
+          set -euo pipefail
+          if [ ! -f "${TRACK_FILE}" ]; then
+            echo "Track file ${TRACK_FILE} not found"
+            echo "old_commit=" >> "$GITHUB_OUTPUT"
+            echo "old_version=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          OLD_COMMIT=$(jq -r '.commit // ""' "${TRACK_FILE}")
+          OLD_VERSION=$(jq -r '.version // ""' "${TRACK_FILE}")
+          echo "old_commit=${OLD_COMMIT}" >> "$GITHUB_OUTPUT"
+          echo "old_version=${OLD_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "ℹ Tracked upstream commit: ${OLD_COMMIT}"
+          echo "ℹ Tracked upstream version: ${OLD_VERSION}"
+
+      - name: Resolve current upstream HEAD
+        id: upstream
+        run: |
+          set -euo pipefail
+          NEW_COMMIT=$(git ls-remote "https://github.com/${UPSTREAM_REPO}.git" "refs/heads/${BRANCH}" | cut -f1)
+          if [ -z "${NEW_COMMIT}" ]; then
+            echo "ERROR: Could not resolve upstream HEAD for ${UPSTREAM_REPO}@${BRANCH}"
+            exit 1
+          fi
+          echo "new_commit=${NEW_COMMIT}" >> "$GITHUB_OUTPUT"
+          echo "ℹ Current upstream commit: ${NEW_COMMIT}"
+
+          # mlat-server has no `version` file. Try fetching one anyway in case
+          # upstream adds one in the future; otherwise synthesize from short SHA.
+          VER_RAW=$(curl -fsSL "https://raw.githubusercontent.com/${UPSTREAM_REPO}/${BRANCH}/version" 2>/dev/null || true)
+          if [ -n "${VER_RAW}" ]; then
+            NEW_VERSION="${VER_RAW//$'\n'/}"
+          else
+            SHORT="${NEW_COMMIT:0:7}"
+            NEW_VERSION="0.0.0+g${SHORT}"
+          fi
+          echo "new_version=${NEW_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "ℹ Resolved upstream version: ${NEW_VERSION}"
+
+      - name: Compare states
+        id: compare
+        env:
+          OLD_COMMIT: ${{ steps.tracked.outputs.old_commit }}
+          OLD_VERSION: ${{ steps.tracked.outputs.old_version }}
+          NEW_COMMIT: ${{ steps.upstream.outputs.new_commit }}
+          NEW_VERSION: ${{ steps.upstream.outputs.new_version }}
+        run: |
+          set -euo pipefail
+          echo "old_commit=${OLD_COMMIT}" >> "$GITHUB_OUTPUT"
+          echo "old_version=${OLD_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "new_commit=${NEW_COMMIT}" >> "$GITHUB_OUTPUT"
+          echo "new_version=${NEW_VERSION}" >> "$GITHUB_OUTPUT"
+
+          if [ "${OLD_COMMIT}" = "${NEW_COMMIT}" ]; then
+            echo "✓ No upstream change (commit unchanged: ${NEW_COMMIT})"
+            echo "has_update=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "⚡ Upstream change detected: ${OLD_COMMIT:-<empty>} → ${NEW_COMMIT}"
+            echo "has_update=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  open-pr:
+    needs: check-upstream
+    if: needs.check-upstream.outputs.has_update == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update tracker file
+        env:
+          NEW_COMMIT: ${{ needs.check-upstream.outputs.new_commit }}
+          NEW_VERSION: ${{ needs.check-upstream.outputs.new_version }}
+        run: |
+          set -euo pipefail
+          jq -n \
+            --arg branch "${BRANCH}" \
+            --arg version "${NEW_VERSION}" \
+            --arg commit "${NEW_COMMIT}" \
+            '{branch: $branch, version: $version, commit: $commit}' \
+            > "${TRACK_FILE}"
+          cat "${TRACK_FILE}"
+
+      - name: Create pull request
+        uses: peter-evans/create-pull-request@v7
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: "chore(upstream): bump mlat-server to ${{ needs.check-upstream.outputs.new_version }}"
+          title: "chore(upstream): bump mlat-server to ${{ needs.check-upstream.outputs.new_version }}"
+          branch: upstream/mlat-server-${{ needs.check-upstream.outputs.new_commit }}
+          delete-branch: true
+          body: |
+            Automated update from upstream `${{ env.UPSTREAM_REPO }}`.
+
+            | Field | Old | New |
+            | --- | --- | --- |
+            | Commit  | `${{ needs.check-upstream.outputs.old_commit }}` | `${{ needs.check-upstream.outputs.new_commit }}` |
+            | Version | `${{ needs.check-upstream.outputs.old_version }}` | `${{ needs.check-upstream.outputs.new_version }}` |
+
+            **Upstream diff:** https://github.com/${{ env.UPSTREAM_REPO }}/compare/${{ needs.check-upstream.outputs.old_commit }}...${{ needs.check-upstream.outputs.new_commit }}
+
+            Merging this PR will trigger a rebuild via `publish.yml` which clones the upstream branch HEAD at build time.
+          labels: |
+            upstream
+            automated

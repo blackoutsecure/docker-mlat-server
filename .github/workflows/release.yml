@@ -1,0 +1,339 @@
+name: Release
+
+on:
+  release:
+    types:
+      - published
+      - released
+  workflow_dispatch:
+    inputs:
+      release_name:
+        description: 'Release name (optional, defaults to upstream version)'
+        required: false
+        type: string
+
+permissions:
+  contents: write
+  packages: read
+
+env:
+  REGISTRY: docker.io
+  DOCKERHUB_NAMESPACE: ${{ secrets.DOCKERHUB_NAMESPACE }}
+  IMAGE_NAME: mlat-server
+  MLAT_SERVER_REPO_URL: https://github.com/wiedehopf/mlat-server
+  MLAT_SERVER_REPO_BRANCH: master
+
+jobs:
+  validate-release:
+    runs-on: ubuntu-latest
+    outputs:
+      release_tag: ${{ steps.detect.outputs.release_tag }}
+      release_name: ${{ steps.detect.outputs.release_name }}
+      event_type: ${{ steps.detect.outputs.event_type }}
+    steps:
+      - name: Detect release source
+        id: detect
+        env:
+          EVENT_ACTION: ${{ github.event_name }}
+          DISPATCH_NAME: ${{ github.event.inputs.release_name }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          RELEASE_NAME: ${{ github.event.release.name }}
+          MLAT_SERVER_REPO_BRANCH: ${{ env.MLAT_SERVER_REPO_BRANCH }}
+        run: |
+          set -euo pipefail
+
+          echo "ℹ Event: ${EVENT_ACTION}"
+
+          if [ "${EVENT_ACTION}" = "workflow_dispatch" ]; then
+            echo "ℹ Manual dispatch: resolving version from upstream wiedehopf/mlat-server (${MLAT_SERVER_REPO_BRANCH})"
+            # mlat-server has no `version` file or git tags. Build a synthetic
+            # PEP 440-style local version from the latest upstream commit SHA.
+            UPSTREAM_SHA="$(git ls-remote "https://github.com/wiedehopf/mlat-server.git" "refs/heads/${MLAT_SERVER_REPO_BRANCH}" | cut -f1)"
+            if [[ -z "${UPSTREAM_SHA}" ]]; then
+              echo "ERROR: Could not resolve upstream commit SHA from wiedehopf/mlat-server@${MLAT_SERVER_REPO_BRANCH}"
+              exit 1
+            fi
+            UPSTREAM_SHORT="${UPSTREAM_SHA:0:7}"
+            UPSTREAM_VERSION="0.0.0+g${UPSTREAM_SHORT}"
+            echo "ℹ Upstream commit: ${UPSTREAM_SHA} (synthesized version: ${UPSTREAM_VERSION})"
+            TAG="v${UPSTREAM_VERSION}"
+            NAME="${DISPATCH_NAME:-Upstream mlat-server ${UPSTREAM_VERSION}}"
+          else
+            TAG="${RELEASE_TAG}"
+            NAME="${RELEASE_NAME:-GitHub Release}"
+            echo "ℹ GitHub release detected"
+          fi
+
+          # Validate tag format. Accepts standard semver (v1.2.3 / 1.2.3) as well
+          # as PEP 440 local versions like 0.0.0+g1234567 used for upstream
+          # commits that have no semver tag of their own.
+          if ! [[ "${TAG}" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+([+-][A-Za-z0-9._-]+)?$ ]]; then
+            echo "ERROR: Invalid version tag format: ${TAG}"
+            echo "Expected: v1.2.3, 1.2.3, or 0.0.0+g<short_sha>"
+            exit 1
+          fi
+
+          echo "release_tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "release_name=${NAME}" >> "$GITHUB_OUTPUT"
+          echo "event_type=${EVENT_ACTION}" >> "$GITHUB_OUTPUT"
+          echo "✓ Release validation passed: ${TAG}"
+
+  release-metadata:
+    needs: validate-release
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.metadata.outputs.version }}
+      release_name: ${{ steps.metadata.outputs.release_name }}
+      upstream_commit: ${{ steps.metadata.outputs.upstream_commit }}
+      upstream_version: ${{ steps.metadata.outputs.upstream_version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Extract release metadata
+        id: metadata
+        env:
+          RELEASE_TAG: ${{ needs.validate-release.outputs.release_tag }}
+          RELEASE_NAME: ${{ needs.validate-release.outputs.release_name }}
+        run: |
+          set -euo pipefail
+
+          # Extract version from tag (e.g., v1.2.3 -> 1.2.3, v0.0.0+g123 -> 0.0.0+g123)
+          VERSION="${RELEASE_TAG#v}"
+
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "release_name=${RELEASE_NAME}" >> "$GITHUB_OUTPUT"
+          echo "ℹ Release Version: ${VERSION}"
+
+          # Fetch upstream metadata with error handling
+          TMPDIR="$(mktemp -d)"
+          trap 'rm -rf "${TMPDIR}"' EXIT
+
+          git init "${TMPDIR}" >/dev/null 2>&1
+          git -C "${TMPDIR}" remote add origin "${MLAT_SERVER_REPO_URL}.git" 2>&1
+          if git -C "${TMPDIR}" fetch --depth 1 origin "${MLAT_SERVER_REPO_BRANCH}" >/dev/null 2>&1; then
+            UPSTREAM_COMMIT="$(git -C "${TMPDIR}" rev-parse FETCH_HEAD 2>/dev/null | cut -c1-7)"
+            UPSTREAM_VERSION_FILE="$(git -C "${TMPDIR}" show FETCH_HEAD:version 2>/dev/null || true)"
+            if [ -n "${UPSTREAM_VERSION_FILE}" ]; then
+              UPSTREAM_VERSION="${UPSTREAM_VERSION_FILE}"
+            else
+              UPSTREAM_VERSION="0.0.0+g${UPSTREAM_COMMIT}"
+            fi
+            echo "ℹ Upstream mlat-server: ${UPSTREAM_VERSION} (${UPSTREAM_COMMIT})"
+          else
+            UPSTREAM_COMMIT="unknown"
+            UPSTREAM_VERSION="unknown"
+            echo "⚠ Warning: Could not fetch upstream metadata"
+          fi
+
+          echo "upstream_commit=${UPSTREAM_COMMIT}" >> "$GITHUB_OUTPUT"
+          echo "upstream_version=${UPSTREAM_VERSION}" >> "$GITHUB_OUTPUT"
+
+  tag-images:
+    needs: [validate-release, release-metadata]
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU (for multi-arch builds)
+        uses: docker/setup-qemu-action@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Validate Docker credentials
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${DOCKERHUB_USERNAME}" ] || [ -z "${DOCKERHUB_TOKEN}" ]; then
+            echo "ERROR: Docker Hub credentials not configured"
+            exit 1
+          fi
+
+          echo "ℹ Docker Hub credentials validated"
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v4
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Confirm Docker auth
+        run: docker info > /dev/null && echo "✓ Docker authentication confirmed"
+
+      - name: Compute Docker-safe version tag
+        id: tagsafe
+        env:
+          RAW_VERSION: ${{ needs.release-metadata.outputs.version }}
+        run: |
+          set -euo pipefail
+          # Docker tags forbid '+' — convert PEP 440 local-version separator
+          # to '-' (e.g. 0.0.0+g1234567 -> 0.0.0-g1234567).
+          SAFE="${RAW_VERSION//+/-}"
+          echo "safe_version=${SAFE}" >> "$GITHUB_OUTPUT"
+          echo "Safe version tag: ${SAFE}"
+
+      - name: Extract Docker metadata
+        id: docker-meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.DOCKERHUB_NAMESPACE }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=${{ steps.tagsafe.outputs.safe_version }}
+            type=raw,value=latest
+            type=sha,prefix={{branch}}-
+
+      - name: Build and push multi-arch release
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          platforms: linux/amd64,linux/arm64
+          no-cache: false
+          pull: true
+          provenance: false
+          tags: ${{ steps.docker-meta.outputs.tags }}
+          labels: ${{ steps.docker-meta.outputs.labels }}
+          build-args: |
+            MLAT_SERVER_REPO_URL=${{ env.MLAT_SERVER_REPO_URL }}
+            MLAT_SERVER_REPO_BRANCH=${{ env.MLAT_SERVER_REPO_BRANCH }}
+
+  create-github-release:
+    needs: [validate-release, release-metadata, tag-images]
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'workflow_dispatch' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Generate release body
+        id: body
+        env:
+          RELEASE_VERSION: ${{ needs.release-metadata.outputs.version }}
+          RELEASE_TAG: ${{ needs.validate-release.outputs.release_tag }}
+          UPSTREAM_COMMIT: ${{ needs.release-metadata.outputs.upstream_commit }}
+          UPSTREAM_VERSION: ${{ needs.release-metadata.outputs.upstream_version }}
+          DOCKER_IMAGE: ${{ env.REGISTRY }}/${{ env.DOCKERHUB_NAMESPACE }}/${{ env.IMAGE_NAME }}
+        run: |
+          BUILD_DATE=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
+          SAFE_VERSION="${RELEASE_VERSION//+/-}"
+          cat > /tmp/release_notes.md << EOMD
+          ## Release ${RELEASE_VERSION}
+
+          ### Docker Hub Images
+
+          **Primary Registry:**
+          \`\`\`bash
+          docker pull ${DOCKER_IMAGE}:${SAFE_VERSION}
+          docker pull ${DOCKER_IMAGE}:latest
+          \`\`\`
+
+          **Available Tags:**
+          - \`${DOCKER_IMAGE}:${SAFE_VERSION}\` - Specific version (recommended for production)
+          - \`${DOCKER_IMAGE}:latest\` - Latest stable build
+          - Multi-arch support: amd64, arm64
+
+          ### Build Information
+
+          - **Image Version:** ${RELEASE_VERSION}
+          - **Release Tag:** ${RELEASE_TAG}
+          - **Upstream mlat-server:** ${UPSTREAM_VERSION} (commit: ${UPSTREAM_COMMIT})
+          - **Build Date:** ${BUILD_DATE}
+          - **Repository:** https://github.com/${{ github.repository }}
+
+          ### Supported Architectures
+
+          | Architecture | Platform |
+          | --- | --- |
+          | x86-64 | linux/amd64 |
+          | ARM 64-bit | linux/arm64v8 |
+
+          ### Quick Start
+
+          \`\`\`bash
+          docker run -d \\
+            --name mlat-server \\
+            -e TZ=Etc/UTC \\
+            -e MLAT_SERVER_CLIENT_LISTEN=31090 \\
+            -e MLAT_SERVER_FILTERED_BASESTATION_LISTEN=31003 \\
+            -e MLAT_SERVER_BASESTATION_LISTEN=31004 \\
+            -e MLAT_SERVER_WORK_DIR=/config/work \\
+            -p 31090:31090/tcp -p 31090:31090/udp \\
+            -p 31003:31003/tcp -p 31004:31004/tcp \\
+            -v mlat-server-config:/config \\
+            ${DOCKER_IMAGE}:${SAFE_VERSION}
+          \`\`\`
+
+          ### Documentation
+
+          - [Full README](https://github.com/${{ github.repository }}/blob/main/README.md)
+          - [Upstream mlat-server Documentation](https://github.com/wiedehopf/mlat-server)
+          - [Release History](https://github.com/${{ github.repository }}/releases)
+
+          ### About This Image
+
+          - **Built with:** LinuxServer.io-style patterns (s6, hardened defaults)
+          - **Maintained by:** Blackout Secure
+          - **Features:** Mode S multilateration coordinator, Basestation/SBS output, multi-client support
+          - **License:** AGPL-3.0-or-later (matches upstream mlat-server)
+          - **Official Status:** Unofficial community container (not affiliated with LinuxServer.io or wiedehopf)
+          EOMD
+          cat /tmp/release_notes.md
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.validate-release.outputs.release_tag }}
+          name: ${{ needs.release-metadata.outputs.release_name }}
+          body_path: /tmp/release_notes.md
+          draft: false
+          prerelease: false
+          make_latest: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  summary:
+    needs: [validate-release, release-metadata, tag-images, create-github-release]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Release Summary
+        env:
+          RELEASE_VERSION: ${{ needs.release-metadata.outputs.version }}
+          RELEASE_TAG: ${{ needs.validate-release.outputs.release_tag }}
+          EVENT_NAME: ${{ needs.validate-release.outputs.event_type }}
+          DOCKER_IMAGE: ${{ env.REGISTRY }}/${{ env.DOCKERHUB_NAMESPACE }}/${{ env.IMAGE_NAME }}
+          UPSTREAM_VERSION: ${{ needs.release-metadata.outputs.upstream_version }}
+        run: |
+          SAFE_VERSION="${RELEASE_VERSION//+/-}"
+          cat << EOF
+          ===== Release Workflow Complete =====
+
+          Release Event:     ${EVENT_NAME}
+          Version:           ${RELEASE_VERSION}
+          Release Tag:       ${RELEASE_TAG}
+          Docker Hub Image:  ${DOCKER_IMAGE}:${SAFE_VERSION}
+          Latest Tag:        ${DOCKER_IMAGE}:latest
+          Upstream mlat:     ${UPSTREAM_VERSION}
+          Repository:        ${{ github.repository }}
+          Triggered by:      ${{ github.triggering_actor }}
+          Timestamp:         $(date -u +'%Y-%m-%d %H:%M:%S UTC')
+
+          Available Tags:
+          - ${DOCKER_IMAGE}:${SAFE_VERSION} (specific version)
+          - ${DOCKER_IMAGE}:latest (current stable)
+          - Architectures: amd64, arm64v8
+
+          Next Steps:
+          1. Review release on GitHub: ${{ github.server_url }}/${{ github.repository }}/releases/tag/${RELEASE_TAG}
+          2. Test image pull: docker pull ${DOCKER_IMAGE}:${SAFE_VERSION}
+          3. Monitor pull statistics and user issues
+
+          ===============================
+          EOF

@@ -1,0 +1,224 @@
+#!/usr/bin/with-contenv bash
+
+set -euo pipefail
+
+# ── Logging ───────────────────────────────────────────────────────────────────
+SVC_NAME="svc-mlat-server"
+# shellcheck source=/usr/local/bin/log-functions.sh
+. /usr/local/bin/log-functions.sh
+
+mlat_server_user=${MLAT_SERVER_USER:-root}
+build_metadata_path=/usr/local/share/mlat-server/build-metadata.env
+
+# ── Restart backoff ───────────────────────────────────────────────────────────
+# Prevent tight crash loops when a configuration error is present.
+# Track consecutive failures via an ephemeral file in /run and apply a
+# progressive delay (5s → 10s → 15s … max 60s) before each attempt.
+#
+# Note: the fail counter is pre-incremented BEFORE exec (since exec replaces
+# the process and EXIT traps never fire). We must assume failure upfront.
+# If the previous run lasted ≥ _MIN_HEALTHY_SECS, it was not a crash loop
+# and the counter is reset to avoid false-positive warnings.
+_fail_count_file="/run/mlat-server-fail-count"
+_start_ts_file="/run/mlat-server-start-ts"
+_MIN_HEALTHY_SECS=60
+_fail_count=0
+if [[ -f "${_fail_count_file}" ]]; then
+    _fail_count=$(tr -d '[:space:]' < "${_fail_count_file}")
+    _fail_count=${_fail_count:-0}
+fi
+# Reset fail counter if the previous run was long-lived (not a crash loop)
+if [[ ${_fail_count} -gt 0 && -f "${_start_ts_file}" ]]; then
+    _prev_start=$(tr -d '[:space:]' < "${_start_ts_file}")
+    _now=$(date +%s)
+    if [[ -n "${_prev_start}" ]] && (( _now - _prev_start >= _MIN_HEALTHY_SECS )); then
+        log_info "Previous run lasted $(( _now - _prev_start ))s (≥${_MIN_HEALTHY_SECS}s). Resetting fail counter."
+        _fail_count=0
+        rm -f "${_fail_count_file}"
+    fi
+fi
+_is_restart=false
+if [[ ${_fail_count} -gt 0 ]]; then
+    _is_restart=true
+    _backoff=$(( _fail_count * 5 ))
+    [[ ${_backoff} -gt 60 ]] && _backoff=60
+    log_warn "Previous launch failed (attempt #${_fail_count}). Waiting ${_backoff}s before retry."
+    sleep "${_backoff}"
+fi
+
+# Import build metadata captured from upstream mlat-server so these values are
+# available to the service process in production.
+if [[ -r "${build_metadata_path}" ]]; then
+    set -a
+    # shellcheck disable=SC1090
+    . "${build_metadata_path}"
+    set +a
+fi
+
+if [[ "${mlat_server_user}" != "root" ]]; then
+    if [[ "${mlat_server_user}" == "abc" && -z ${PUID:-} ]]; then
+        export PUID=911
+    fi
+    if [[ "${mlat_server_user}" == "abc" && -z ${PGID:-} ]]; then
+        export PGID=911
+    fi
+fi
+
+# Build effective mlat-server arguments
+mlat_server_args=()
+mlat_server_args_source="default"
+
+if [[ -n ${MLAT_SERVER_ARGS:-} ]]; then
+    mlat_server_args_source="env"
+    read -r -a mlat_server_args <<< "${MLAT_SERVER_ARGS}"
+fi
+
+# Append per-flag args from individual env vars if not already present in MLAT_SERVER_ARGS.
+has_mlat_opt() {
+    local opt=$1
+    local token
+    for token in "${mlat_server_args[@]}"; do
+        if [[ ${token} == "${opt}" || ${token} == "${opt}="* ]]; then
+            return 0
+        fi
+    done
+    return 1
+}
+
+# --client-listen [host:]tcp_port[:udp_port] (mlat-client connections)
+if [[ -n ${MLAT_SERVER_CLIENT_LISTEN:-} ]] && ! has_mlat_opt "--client-listen"; then
+    mlat_server_args+=(--client-listen "${MLAT_SERVER_CLIENT_LISTEN}")
+fi
+
+# --motd "Welcome message" sent to mlat-clients on connect
+if [[ -n ${MLAT_SERVER_MOTD:-} ]] && ! has_mlat_opt "--motd"; then
+    mlat_server_args+=(--motd "${MLAT_SERVER_MOTD}")
+fi
+
+# --write-csv /path/to/file (server-side result CSV)
+if [[ -n ${MLAT_SERVER_WRITE_CSV:-} ]] && ! has_mlat_opt "--write-csv"; then
+    mlat_server_args+=(--write-csv "${MLAT_SERVER_WRITE_CSV}")
+fi
+
+# --basestation-connect host:port (push unfiltered SBS results)
+if [[ -n ${MLAT_SERVER_BASESTATION_CONNECT:-} ]] && ! has_mlat_opt "--basestation-connect"; then
+    mlat_server_args+=(--basestation-connect "${MLAT_SERVER_BASESTATION_CONNECT}")
+fi
+
+# --basestation-listen [host:]port (serve unfiltered SBS results)
+if [[ -n ${MLAT_SERVER_BASESTATION_LISTEN:-} ]] && ! has_mlat_opt "--basestation-listen"; then
+    mlat_server_args+=(--basestation-listen "${MLAT_SERVER_BASESTATION_LISTEN}")
+fi
+
+# --filtered-basestation-connect host:port (push Kalman-filtered SBS results)
+if [[ -n ${MLAT_SERVER_FILTERED_BASESTATION_CONNECT:-} ]] && ! has_mlat_opt "--filtered-basestation-connect"; then
+    mlat_server_args+=(--filtered-basestation-connect "${MLAT_SERVER_FILTERED_BASESTATION_CONNECT}")
+fi
+
+# --filtered-basestation-listen [host:]port (serve Kalman-filtered SBS results)
+if [[ -n ${MLAT_SERVER_FILTERED_BASESTATION_LISTEN:-} ]] && ! has_mlat_opt "--filtered-basestation-listen"; then
+    mlat_server_args+=(--filtered-basestation-listen "${MLAT_SERVER_FILTERED_BASESTATION_LISTEN}")
+fi
+
+# --work-dir /config/work  (REQUIRED — mlat-server stores sync.json + state here)
+mlat_server_work_dir=${MLAT_SERVER_WORK_DIR:-/config/work}
+if ! has_mlat_opt "--work-dir"; then
+    mlat_server_args+=(--work-dir "${mlat_server_work_dir}")
+fi
+
+# --check-leaks (boolean flag, requires objgraph)
+if [[ ${MLAT_SERVER_CHECK_LEAKS:-false} == "true" ]] && ! has_mlat_opt "--check-leaks"; then
+    mlat_server_args+=(--check-leaks)
+fi
+
+# --dump-pseudorange /path/to/file
+if [[ -n ${MLAT_SERVER_DUMP_PSEUDORANGE:-} ]] && ! has_mlat_opt "--dump-pseudorange"; then
+    mlat_server_args+=(--dump-pseudorange "${MLAT_SERVER_DUMP_PSEUDORANGE}")
+fi
+
+# --partition I/N (run multiple servers as a partitioned cluster)
+if [[ -n ${MLAT_SERVER_PARTITION:-} ]] && ! has_mlat_opt "--partition"; then
+    mlat_server_args+=(--partition "${MLAT_SERVER_PARTITION}")
+fi
+
+# --tag <name> (process title prefix; requires setproctitle)
+if [[ -n ${MLAT_SERVER_TAG:-} ]] && ! has_mlat_opt "--tag"; then
+    mlat_server_args+=(--tag "${MLAT_SERVER_TAG}")
+fi
+
+# --status-interval <seconds> (multiple of 15; -1 disables)
+if [[ -n ${MLAT_SERVER_STATUS_INTERVAL:-} ]] && ! has_mlat_opt "--status-interval"; then
+    mlat_server_args+=(--status-interval "${MLAT_SERVER_STATUS_INTERVAL}")
+fi
+
+build_version=${VERSION:-unknown}
+if [[ -r /build_version ]]; then
+    build_version=$(< /build_version)
+fi
+
+mlat_server_args_rendered=$(printf '%q ' "${mlat_server_args[@]}")
+mlat_server_args_rendered=${mlat_server_args_rendered% }
+
+# On restarts, log a compact summary instead of the full config dump.
+if [[ "${_is_restart}" == "true" ]]; then
+    log_info "mlat-server restarting (attempt #$((_fail_count + 1))). effective_ARGS: ${mlat_server_args_rendered}"
+else
+    log_info "mlat-server multilateration coordinator starting"
+    log_kv "build_version"               "${build_version}"
+    log_kv "VERSION"                     "${VERSION:-unknown}"
+    log_kv "BUILD_DATE"                  "${BUILD_DATE:-unknown}"
+    log_kv "VCS_REF"                     "${VCS_REF:-unknown}"
+    log_kv "PUID"                        "${PUID:-unset}"
+    log_kv "PGID"                        "${PGID:-unset}"
+    log_kv "TZ"                          "${TZ:-unset}"
+    log_kv "MLAT_SERVER_USER"            "${mlat_server_user}"
+    log_kv "client-listen"               "${MLAT_SERVER_CLIENT_LISTEN:-unset}"
+    log_kv "basestation-listen"          "${MLAT_SERVER_BASESTATION_LISTEN:-unset}"
+    log_kv "basestation-connect"         "${MLAT_SERVER_BASESTATION_CONNECT:-unset}"
+    log_kv "filtered-basestation-listen" "${MLAT_SERVER_FILTERED_BASESTATION_LISTEN:-unset}"
+    log_kv "filtered-basestation-connect" "${MLAT_SERVER_FILTERED_BASESTATION_CONNECT:-unset}"
+    log_kv "work-dir"                    "${mlat_server_work_dir}"
+    log_kv "write-csv"                   "${MLAT_SERVER_WRITE_CSV:-unset}"
+    log_kv "dump-pseudorange"            "${MLAT_SERVER_DUMP_PSEUDORANGE:-unset}"
+    log_kv "partition"                   "${MLAT_SERVER_PARTITION:-unset}"
+    log_kv "tag"                         "${MLAT_SERVER_TAG:-unset}"
+    log_kv "status-interval"             "${MLAT_SERVER_STATUS_INTERVAL:-unset}"
+    log_kv "motd"                        "${MLAT_SERVER_MOTD:-unset}"
+    log_kv "check-leaks"                 "${MLAT_SERVER_CHECK_LEAKS:-false}"
+    log_kv "ARGS(src)"                   "${mlat_server_args_source}"
+    log_kv "effective_ARGS"              "${mlat_server_args_rendered}"
+fi
+
+# Validate required arguments
+missing_args=()
+if ! has_mlat_opt "--work-dir"; then
+    missing_args+=("--work-dir (set MLAT_SERVER_WORK_DIR)")
+fi
+if ! has_mlat_opt "--client-listen"; then
+    missing_args+=("--client-listen (set MLAT_SERVER_CLIENT_LISTEN)")
+fi
+
+if [[ ${#missing_args[@]} -gt 0 ]]; then
+    log_error "required arguments missing:"
+    for arg in "${missing_args[@]}"; do
+        log_error "  - ${arg}"
+    done
+    log_error "set the required environment variables and restart"
+    sleep 30
+    exit 1
+fi
+
+# Pre-increment the fail counter BEFORE exec.  exec replaces this process so
+# EXIT traps never fire — we must assume failure upfront.
+echo "$(( _fail_count + 1 ))" > "${_fail_count_file}"
+
+# Record start timestamp so the next invocation can distinguish a crash loop
+# (short-lived) from a healthy run that simply exited normally.
+date +%s > "${_start_ts_file}"
+
+if [[ -z ${LSIO_NON_ROOT_USER:-} ]]; then
+    exec s6-setuidgid "${mlat_server_user}" /usr/local/bin/mlat-server \
+        "${mlat_server_args[@]}"
+fi
+
+exec /usr/local/bin/mlat-server "${mlat_server_args[@]}"

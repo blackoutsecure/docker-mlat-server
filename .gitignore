@@ -1,0 +1,55 @@
+# Compiled and binary files
+*.o
+*.so
+*.a
+*.pyc
+*.pyo
+*.class
+*.jar
+
+# Editor and IDE
+.vscode/
+.idea/
+.sublime-*
+*.swp
+.*.swp
+*~
+*.swo
+*.swn
+.DS_Store
+.AppleDouble
+.LSOverride
+Thumbs.db
+
+# Build and generated files
+build/
+dist/
+.tmp-config/
+tmp/
+*.egg-info/
+__pycache__/
+node_modules/
+
+# Version and metadata files
+.version
+*.orig
+*.rej
+*.patch
+
+# Environment and secrets
+.env
+.env.*
+.secrets/
+
+# Runtime artifacts
+*.log
+logging/
+output/
+coverage/
+.coverage
+
+# Local development
+/local/
+/.local/
+.cache/
+*.tmp
