@@ -1,0 +1,36 @@
+#!/usr/bin/with-contenv bash
+
+set -euo pipefail
+
+# ── Logging ───────────────────────────────────────────────────────────────────
+SVC_NAME="init-mlat-server-config"
+# shellcheck source=root/usr/local/bin/log-functions.sh
+. /usr/local/bin/log-functions.sh
+
+mlat_server_user=${MLAT_SERVER_USER:-root}
+mlat_server_config_dir=/config/mlat-server
+mlat_server_work_dir=${MLAT_SERVER_WORK_DIR:-/config/work}
+
+if [[ "${mlat_server_user}" != "root" ]]; then
+    if [[ "${mlat_server_user}" == "abc" && -z ${PUID:-} ]]; then
+        export PUID=911
+    fi
+    if [[ "${mlat_server_user}" == "abc" && -z ${PGID:-} ]]; then
+        export PGID=911
+    fi
+fi
+
+mkdir -p \
+    "${mlat_server_config_dir}" \
+    "${mlat_server_work_dir}"
+
+if [[ -z ${LSIO_NON_ROOT_USER:-} ]]; then
+    lsiown -R "${mlat_server_user}:${mlat_server_user}" \
+        "${mlat_server_config_dir}" \
+        "${mlat_server_work_dir}"
+fi
+
+log_info "mlat-server initialization complete"
+log_kv "config_dir" "${mlat_server_config_dir}"
+log_kv "work_dir"   "${mlat_server_work_dir}"
+log_kv "user"       "${mlat_server_user}"

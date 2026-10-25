@@ -1,0 +1,84 @@
+# project information
+project_name: mlat-server
+project_url: "https://github.com/wiedehopf/mlat-server"
+project_blurb: "[{{ project_name }}]({{ project_url }}) is a Mode S multilateration server. LinuxServer.io–style containerized server that accepts connections from mlat-client receivers and resolves aircraft positions by multilateration. Sponsored and maintained by Blackout Secure (https://blackoutsecure.com)."
+project_lsio_github_repo_url: "https://github.com/blackoutsecure/docker-mlat-server"
+project_categories: "Amateur Radio,Aviation,Networking,ADS-B"
+
+# supported architectures
+available_architectures:
+  - {arch: "{{ arch_x86_64 }}", tag: "amd64-latest"}
+  - {arch: "{{ arch_arm64 }}", tag: "arm64v8-latest"}
+
+# common parameters
+common_param_env_vars_enabled: true
+param_container_name: "{{ project_name }}"
+param_usage_include_vols: true
+param_volumes:
+  - {vol_path: "/config", vol_host_path: "/path/to/mlat-server/config", desc: "Configuration, work directory, and persistent state"}
+
+param_usage_include_net: false
+param_usage_include_env: true
+param_env_vars:
+  - {env_var: "TZ", env_value: "Etc/UTC", desc: "Timezone (see TZ database)"}
+  - {env_var: "MLAT_SERVER_CLIENT_LISTEN", env_value: "31090", desc: "Listening port(s) for mlat-client connections. Format: 'tcp_port', 'host:tcp_port', 'tcp_port:udp_port', or 'host:tcp_port:udp_port'. Multiple endpoints comma-separated."}
+  - {env_var: "MLAT_SERVER_WORK_DIR", env_value: "/config/work", desc: "Directory for sync.json, aircraft.json, blacklist, and other runtime state (required by mlat-server)"}
+
+# optional env variables
+opt_param_usage_include_env: true
+opt_param_env_vars:
+  - {env_var: "MLAT_SERVER_USER", env_value: "root", desc: "Runtime user. Root is default."}
+  - {env_var: "MLAT_SERVER_MOTD", env_value: "", desc: "Message of the day sent to clients on connect"}
+  - {env_var: "MLAT_SERVER_BASESTATION_CONNECT", env_value: "", desc: "Connect to host:port and send Basestation/SBS-format unfiltered results (multiple comma-separated)"}
+  - {env_var: "MLAT_SERVER_BASESTATION_LISTEN", env_value: "31004", desc: "Listen on [host:]port for Basestation/SBS-format unfiltered results"}
+  - {env_var: "MLAT_SERVER_FILTERED_BASESTATION_CONNECT", env_value: "", desc: "Connect to host:port and send Basestation/SBS-format Kalman-filtered results"}
+  - {env_var: "MLAT_SERVER_FILTERED_BASESTATION_LISTEN", env_value: "31003", desc: "Listen on [host:]port for Basestation/SBS-format Kalman-filtered results"}
+  - {env_var: "MLAT_SERVER_WRITE_CSV", env_value: "", desc: "Write results in CSV format to a local file path (e.g. /config/work/positions.csv)"}
+  - {env_var: "MLAT_SERVER_DUMP_PSEUDORANGE", env_value: "", desc: "Dump pseudorange data in JSON format to a file"}
+  - {env_var: "MLAT_SERVER_PARTITION", env_value: "1/1", desc: "Enable partitioning in the form I/N (this server is partition I of N)"}
+  - {env_var: "MLAT_SERVER_TAG", env_value: "mlat-server", desc: "Process name prefix (requires setproctitle)"}
+  - {env_var: "MLAT_SERVER_STATUS_INTERVAL", env_value: "15", desc: "Status logging interval in seconds (multiple of 15, -1 to disable)"}
+  - {env_var: "MLAT_SERVER_CHECK_LEAKS", env_value: "false", desc: "Enable periodic memory-leak checks (objgraph)"}
+  - {env_var: "MLAT_SERVER_ARGS", env_value: "", desc: "Raw arguments passed directly to mlat-server (overrides individual env vars)"}
+  - {env_var: "PUID", env_value: "", desc: "Optional: User ID for non-root mode (defaults to 911)"}
+  - {env_var: "PGID", env_value: "", desc: "Optional: Group ID for non-root mode (defaults to 911)"}
+
+# application setup block
+app_setup_block_enabled: true
+app_setup_block: |
+  The container runs mlat-server, the multilateration coordinator that
+  receives Mode S timing data from mlat-client receivers and resolves
+  aircraft positions.
+
+  **Required Configuration**: You must publish at least one client-listen
+  endpoint (`MLAT_SERVER_CLIENT_LISTEN`) and a writable work directory
+  (`MLAT_SERVER_WORK_DIR`, default `/config/work`).
+
+  **Client Connections**: Receivers running mlat-client connect to
+  `MLAT_SERVER_CLIENT_LISTEN` (default port 31090, TCP — UDP is optional).
+
+  **Output**: Use `MLAT_SERVER_FILTERED_BASESTATION_LISTEN` and/or
+  `MLAT_SERVER_BASESTATION_LISTEN` to expose resolved positions in
+  Basestation/SBS format. CSV output to a file is available via
+  `MLAT_SERVER_WRITE_CSV`.
+
+  **AGPL-3.0 Network Use Notice**: mlat-server is licensed under the GNU
+  Affero GPL v3. If you operate a modified copy and allow third parties to
+  connect to it, you must publish your modifications and update
+  `mlat/config.py` upstream URL accordingly.
+
+  For all available options, see the [mlat-server documentation](https://github.com/wiedehopf/mlat-server).
+
+# hardware acceleration
+readme_hwaccel: false
+
+# read-only support
+readonly_supported: true
+readonly_message: |
+  Read-only operation is supported. Mount temp directories to tmpfs and ensure
+  `MLAT_SERVER_WORK_DIR` is on a writable volume.
+
+# non-root support
+nonroot_supported: true
+nonroot_message: |
+  Non-root operation is supported via `MLAT_SERVER_USER`.

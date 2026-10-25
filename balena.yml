@@ -1,0 +1,56 @@
+name: mlat-server
+description: >-
+  LinuxServer.io–style containerized Mode S multilateration server (mlat-server)
+  that accepts connections from mlat-client receivers and resolves aircraft
+  positions by multilateration.
+
+post-provisioning: >-
+  ## Usage instructions
+
+
+  Include this snippet in your docker-compose.yml file under 'services':
+
+    ```
+    mlat-server:
+      image: blackoutsecure/mlat-server:latest
+      restart: unless-stopped
+      environment:
+        - TZ=Etc/UTC
+        - MLAT_SERVER_CLIENT_LISTEN=31090
+        - MLAT_SERVER_FILTERED_BASESTATION_LISTEN=31003
+        - MLAT_SERVER_BASESTATION_LISTEN=31004
+        - MLAT_SERVER_WORK_DIR=/config/work
+      ports:
+        - '31090:31090/tcp'
+        - '31090:31090/udp'
+        - '31003:31003/tcp'
+        - '31004:31004/tcp'
+      volumes:
+        - '/path/to/mlat-server/config:/config'
+    ```
+
+  Repository: https://github.com/blackoutsecure/docker-mlat-server
+  Upstream application: https://github.com/wiedehopf/mlat-server
+
+version: v0.0.0
+type: sw.block
+assets:
+  repository:
+    type: blob.asset
+    data:
+      url: 'https://github.com/blackoutsecure/docker-mlat-server'
+  logo:
+    type: blob.asset
+    data:
+      url: 'https://raw.githubusercontent.com/blackoutsecure/docker-mlat-server/main/logo.png'
+data:
+  defaultDeviceType: genericx86-64-ext
+  supportedDeviceTypes:
+    - raspberrypi3
+    - raspberrypi3-64
+    - raspberrypi4
+    - raspberrypi4-64
+    - raspberrypi400
+    - raspberrypi400-64
+    - intel-nuc
+    - genericx86-64-ext

@@ -1,0 +1,21 @@
+# EditorConfig - Enforce consistent code style across the project
+# See https://editorconfig.org/ for details
+
+# Strict top-level root
+root = true
+
+# All files: Unix line endings, LF
+[*]
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = false
+
+# Dockerfile and YAML: 2-space indentation
+[{Dockerfile*,**.yml}]
+indent_style = space
+indent_size = 2
+
+# Shell scripts and s6 overlay: 4-space indentation
+[{**.sh,root/etc/s6-overlay/s6-rc.d/**,root/etc/cont-init.d/**,root/etc/services.d/**}]
+indent_style = space
+indent_size = 4
