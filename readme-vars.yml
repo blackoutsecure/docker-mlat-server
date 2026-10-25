@@ -2,7 +2,7 @@
 project_name: mlat-server
 project_url: "https://github.com/wiedehopf/mlat-server"
 project_blurb: "[{{ project_name }}]({{ project_url }}) is a Mode S multilateration server. LinuxServer.io–style containerized server that accepts connections from mlat-client receivers and resolves aircraft positions by multilateration. Sponsored and maintained by Blackout Secure (https://blackoutsecure.com)."
-project_lsio_github_repo_url: "https://github.com/blackoutmode/docker-mlat-server"
+project_lsio_github_repo_url: "https://github.com/blackoutsecure/docker-mlat-server"
 project_categories: "Amateur Radio,Aviation,Networking,ADS-B"
 
 # supported architectures

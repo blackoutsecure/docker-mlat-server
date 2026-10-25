@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1.7
+# syntax=docker/dockerfile:1.8
 
 ARG BASE_IMAGE_REGISTRY=ghcr.io
 ARG BASE_IMAGE_NAME=linuxserver/baseimage-alpine
@@ -7,7 +7,7 @@ ARG BASE_IMAGE=${BASE_IMAGE_REGISTRY}/${BASE_IMAGE_NAME}:${BASE_IMAGE_VARIANT}
 ARG BUILD_OUTPUT_DIR=/out
 ARG MLAT_SERVER_REPO_URL=https://github.com/wiedehopf/mlat-server
 ARG MLAT_SERVER_REPO_BRANCH=master
-ARG VCS_URL=https://github.com/blackoutmode/docker-mlat-server
+ARG VCS_URL=https://github.com/blackoutsecure/docker-mlat-server
 
 FROM ${BASE_IMAGE} AS builder
 
@@ -38,9 +38,8 @@ RUN git clone \
         ${MLAT_SERVER_REPO_URL} . && \
     BUILD_DATE="$(git log -1 --format=%cI)" && \
     UPSTREAM_SHORT_SHA="$(git rev-parse --short=7 HEAD)" && \
-    VERSION="$(cat version 2>/dev/null \
-        || git describe --tags --always --dirty 2>/dev/null \
-        || echo "0.0.0+g${UPSTREAM_SHORT_SHA}")" && \
+    VERSION="0.0.0+g${UPSTREAM_SHORT_SHA}" && \
+    if [ -s version ]; then VERSION="$(cat version)"; fi && \
     VCS_REF="$(git rev-parse HEAD)" && \
     printf 'BUILD_DATE=%s\nVERSION=%s\nVCS_REF=%s\nVCS_URL=%s\nUPSTREAM_REPO_URL=%s\nUPSTREAM_REPO_BRANCH=%s\n' \
         "${BUILD_DATE}" "${VERSION}" "${VCS_REF}" "${VCS_URL}" \
@@ -52,9 +51,10 @@ ARG VENV_DIR=/opt/mlat-server/venv
 
 # Build the Cython extensions in-place so that running `mlat-server` from the
 # source tree picks them up. The venv contains numpy/scipy/uvloop/etc.
+# python-graph-core needs pkg_resources, which setuptools 82 removed.
 RUN python3 -m venv "${VENV_DIR}" && \
     . "${VENV_DIR}/bin/activate" && \
-    pip install --no-cache-dir --upgrade pip wheel setuptools && \
+    pip install --no-cache-dir --upgrade pip wheel 'setuptools<82' && \
     pip install --no-cache-dir \
         Cython \
         numpy \
@@ -66,6 +66,7 @@ RUN python3 -m venv "${VENV_DIR}" && \
         objgraph \
         setproctitle && \
     python3 setup.py build_ext --inplace && \
+    python3 mlat-server --help > /dev/null && \
     deactivate && \
     mkdir -p "${BUILD_OUTPUT_DIR}" && \
     cp -a "${VENV_DIR}" "${BUILD_OUTPUT_DIR}/venv" && \

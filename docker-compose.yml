@@ -2,7 +2,7 @@ version: '2.4'
 
 services:
   mlat-server:
-    image: docker.io/blackoutmode/mlat-server:latest
+    image: docker.io/blackoutsecure/mlat-server:latest
     container_name: mlat-server
     environment:
       TZ: Etc/UTC

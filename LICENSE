@@ -10,7 +10,7 @@ Packaged and maintained by Blackout Secure. This project provides
 Docker containerization of the mlat-server multilateration server. It does not
 claim authorship of mlat-server itself.
 
-Repository: https://github.com/blackoutmode/docker-mlat-server
+Repository: https://github.com/blackoutsecure/docker-mlat-server
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU Affero General Public License as published by

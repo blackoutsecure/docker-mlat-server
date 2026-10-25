@@ -4,7 +4,7 @@ set -euo pipefail
 
 # ── Logging ───────────────────────────────────────────────────────────────────
 SVC_NAME="init-mlat-server-config"
-# shellcheck source=/usr/local/bin/log-functions.sh
+# shellcheck source=root/usr/local/bin/log-functions.sh
 . /usr/local/bin/log-functions.sh
 
 mlat_server_user=${MLAT_SERVER_USER:-root}

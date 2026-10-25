@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/blackoutmode/docker-mlat-server/main/logo.png" alt="mlat-server logo" width="200">
+  <img src="https://raw.githubusercontent.com/blackoutsecure/docker-mlat-server/main/logo.png" alt="mlat-server logo" width="200">
 </p>
 
 # docker-mlat-server
@@ -7,12 +7,13 @@
 > LinuxServer.io–style containerized server that coordinates Mode S
 > multilateration across many mlat-client receivers.
 
-[![GitHub Stars](https://img.shields.io/github/stars/blackoutmode/docker-mlat-server.svg?style=flat-square&color=E68523&logo=github&logoColor=FFFFFF)](https://github.com/blackoutmode/docker-mlat-server/stargazers)
-[![Docker Pulls](https://img.shields.io/docker/pulls/blackoutmode/mlat-server.svg?style=flat-square&color=E68523&logo=docker&logoColor=FFFFFF)](https://hub.docker.com/r/blackoutmode/mlat-server)
-[![GitHub Release](https://img.shields.io/github/release/blackoutmode/docker-mlat-server.svg?style=flat-square&color=E68523&logo=github&logoColor=FFFFFF)](https://github.com/blackoutmode/docker-mlat-server/releases)
-[![Release CI](https://img.shields.io/github/actions/workflow/status/blackoutmode/docker-mlat-server/release.yml?style=flat-square&logo=github&label=release)](https://github.com/blackoutmode/docker-mlat-server/actions/workflows/release.yml)
-[![Publish CI](https://img.shields.io/github/actions/workflow/status/blackoutmode/docker-mlat-server/publish.yml?style=flat-square&logo=github&label=publish)](https://github.com/blackoutmode/docker-mlat-server/actions/workflows/publish.yml)
+[![GitHub Stars](https://img.shields.io/github/stars/blackoutsecure/docker-mlat-server.svg?style=flat-square&color=E68523&logo=github&logoColor=FFFFFF)](https://github.com/blackoutsecure/docker-mlat-server/stargazers)
+[![Docker Pulls](https://img.shields.io/docker/pulls/blackoutsecure/mlat-server.svg?style=flat-square&color=E68523&logo=docker&logoColor=FFFFFF)](https://hub.docker.com/r/blackoutsecure/mlat-server)
+[![GitHub Release](https://img.shields.io/github/release/blackoutsecure/docker-mlat-server.svg?style=flat-square&color=E68523&logo=github&logoColor=FFFFFF)](https://github.com/blackoutsecure/docker-mlat-server/releases)
+[![Release CI](https://img.shields.io/github/actions/workflow/status/blackoutsecure/docker-mlat-server/release.yml?style=flat-square&logo=github&label=release)](https://github.com/blackoutsecure/docker-mlat-server/actions/workflows/release.yml)
+[![Publish CI](https://img.shields.io/github/actions/workflow/status/blackoutsecure/docker-mlat-server/publish.yml?style=flat-square&logo=github&label=publish)](https://github.com/blackoutsecure/docker-mlat-server/actions/workflows/publish.yml)
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPLv3-blue.svg?style=flat-square)](https://www.gnu.org/licenses/agpl-3.0)
+[![Made by BlackoutSecure](https://img.shields.io/badge/made%20by-BlackoutSecure-1f1f1f?style=flat-square)](https://github.com/blackoutsecure)
 
 Unofficial community image for [mlat-server](https://github.com/wiedehopf/mlat-server),
 built with [LinuxServer.io](https://linuxserver.io/) style container patterns
@@ -44,9 +45,9 @@ correlates the signals and resolves aircraft positions geometrically.
 
 Quick links:
 
-- Docker Hub listing: [blackoutmode/mlat-server](https://hub.docker.com/r/blackoutmode/mlat-server)
+- Docker Hub listing: [blackoutsecure/mlat-server](https://hub.docker.com/r/blackoutsecure/mlat-server)
 - Balena block listing: [mlat-server block on Balena Hub](https://hub.balena.io/)
-- GitHub repository: [blackoutmode/docker-mlat-server](https://github.com/blackoutmode/docker-mlat-server)
+- GitHub repository: [blackoutsecure/docker-mlat-server](https://github.com/blackoutsecure/docker-mlat-server)
 - Upstream application: [wiedehopf/mlat-server](https://github.com/wiedehopf/mlat-server)
 
 ## Table of Contents
@@ -65,6 +66,7 @@ Quick links:
 - [Application Setup](#application-setup)
 - [Troubleshooting](#troubleshooting)
 - [Release & Versioning](#release--versioning)
+- [Development & Publishing](#development--publishing)
 - [License](#license)
 - [Support & Getting Help](#support--getting-help)
 - [References](#references)
@@ -88,7 +90,7 @@ docker run -d \
   -p 31003:31003/tcp \
   -p 31004:31004/tcp \
   -v mlat-server-config:/config \
-  blackoutmode/mlat-server:latest
+  blackoutsecure/mlat-server:latest
 ```
 
 For compose files, balena, and more examples, see [Usage](#usage) below.
@@ -97,17 +99,17 @@ For compose files, balena, and more examples, see [Usage](#usage) below.
 
 Docker Hub (Recommended):
 
-- All images published to [Docker Hub](https://hub.docker.com/r/blackoutmode/mlat-server)
-- Simple pull command: `docker pull blackoutmode/mlat-server:latest`
+- All images published to [Docker Hub](https://hub.docker.com/r/blackoutsecure/mlat-server)
+- Simple pull command: `docker pull blackoutsecure/mlat-server:latest`
 - Multi-arch support: amd64, arm64
 - No registry prefix needed (defaults to Docker Hub)
 
 ```bash
 # Pull latest
-docker pull blackoutmode/mlat-server:latest
+docker pull blackoutsecure/mlat-server:latest
 
 # Pull a specific commit-pinned build
-docker pull blackoutmode/mlat-server:0.0.0-g9b27a6d
+docker pull blackoutsecure/mlat-server:0.0.0-g9b27a6d
 ```
 
 > **Note on versioning:** Upstream `wiedehopf/mlat-server` does not maintain a
@@ -133,7 +135,7 @@ Author and maintenance credits (upstream):
 ## Supported Architectures
 
 This image is published as a multi-arch manifest. Pulling
-`blackoutmode/mlat-server:latest` retrieves the correct image for your host
+`blackoutsecure/mlat-server:latest` retrieves the correct image for your host
 architecture.
 
 The architectures supported by this image are:
@@ -179,7 +181,7 @@ client will fall back to TCP-only.
 ---
 services:
   mlat-server:
-    image: blackoutmode/mlat-server:latest
+    image: blackoutsecure/mlat-server:latest
     container_name: mlat-server
     environment:
       - TZ=Etc/UTC
@@ -213,7 +215,7 @@ volumes:
 ---
 services:
   mlat-server:
-    image: blackoutmode/mlat-server:latest
+    image: blackoutsecure/mlat-server:latest
     container_name: mlat-server
     environment:
       - TZ=Etc/UTC
@@ -236,7 +238,7 @@ services:
     restart: unless-stopped
 
   mlat-client:
-    image: blackoutmode/mlat-client:latest
+    image: blackoutsecure/mlat-client:latest
     container_name: mlat-feeder
     depends_on:
       - mlat-server
@@ -285,7 +287,7 @@ docker run -d \
   -p 31004:31004/tcp \
   -v /path/to/mlat-server/config:/config \
   --restart unless-stopped \
-  blackoutmode/mlat-server:latest
+  blackoutsecure/mlat-server:latest
 ```
 
 ### Balena Deployment
@@ -495,7 +497,7 @@ If clients connect but the server does not produce positions:
 
 - Check [upstream mlat-server documentation](https://github.com/wiedehopf/mlat-server)
 - Review container logs: `docker logs -f mlat-server`
-- Open an issue on [GitHub](https://github.com/blackoutmode/docker-mlat-server/issues)
+- Open an issue on [GitHub](https://github.com/blackoutsecure/docker-mlat-server/issues)
 
 ## Release & Versioning
 
@@ -504,7 +506,7 @@ commit (since upstream maintains no `version` file or tags):
 
 - Image tag pattern: `0.0.0-g<short_sha>` (e.g. `0.0.0-g9b27a6d`) plus
   `latest`
-- Releases published on [GitHub Releases](https://github.com/blackoutmode/docker-mlat-server/releases)
+- Releases published on [GitHub Releases](https://github.com/blackoutsecure/docker-mlat-server/releases)
 - Multi-arch images (amd64, arm64v8) built automatically
 - An `upstream-release-monitor` workflow opens a PR whenever upstream HEAD
   changes
@@ -512,7 +514,7 @@ commit (since upstream maintains no `version` file or tags):
 Update to latest:
 
 ```bash
-docker pull blackoutmode/mlat-server:latest
+docker pull blackoutsecure/mlat-server:latest
 docker compose up -d  # if using compose
 ```
 
@@ -520,8 +522,57 @@ Check image version:
 
 ```bash
 docker inspect -f '{{ index .Config.Labels "build_version" }}' \
-  blackoutmode/mlat-server:latest
+  blackoutsecure/mlat-server:latest
 ```
+
+## Development & Publishing
+
+Clone [blackoutsecure/docker-mlat-server](https://github.com/blackoutsecure/docker-mlat-server)
+and validate from the repository root:
+
+```bash
+docker compose config --quiet
+docker build --check .
+actionlint .github/workflows/*.yml
+shellcheck --shell=bash --external-sources \
+  root/etc/s6-overlay/s6-rc.d/*/run root/usr/local/bin/*.sh
+docker build -t blackoutsecure/mlat-server:dev .
+```
+
+Keep the files under `root/` LF-terminated, including the extensionless s6
+scripts. The Git attributes enforce this on Windows checkouts.
+
+The virtual environment retains `setuptools<82` because `python-graph-core`
+still imports `pkg_resources`. The build runs `mlat-server --help` to catch
+missing application imports before producing an image.
+
+Use `dev` for development and promote changes to `main` through a pull
+request. The publish workflow builds pull requests and pushes to `dev`
+without registry credentials. Pushes to `main` publish
+`blackoutsecure/mlat-server`; manual runs are build-only unless the
+`publish` input is enabled. Changes to the upstream tracker also trigger
+builds, so merging an upstream-update PR rebuilds the image. Build metadata
+uses the same synthetic upstream version as the registry tags.
+
+Configure Actions before publishing from a newly migrated repository:
+
+- `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` secrets are required, with write
+  access to the Docker Hub namespace.
+- `DOCKERHUB_NAMESPACE` is an optional repository variable, with the
+  same-named secret supported for compatibility. It defaults to
+  `blackoutsecure`; override it only when publishing to another namespace.
+- Balena publishing is optional. Configure both the `BALENA_API_TOKEN`
+  secret and `BALENA_NAMESPACE` variable (or legacy `BALENA_USERNAME`
+  secret) to enable it. Neither configured explicitly skips Balena; a
+  partial configuration fails preflight.
+- The upstream monitor opens pull requests using `GITHUB_TOKEN`. Enable
+  **Allow GitHub Actions to create and approve pull requests** in the
+  repository's Actions workflow permissions, subject to organization
+  policy. Upstream updates still require review and merging.
+
+Repository credentials and settings are not copied from the old repository.
+The image must be published in the new namespace before the pull examples
+above can be used there.
 
 ## License
 
@@ -543,7 +594,7 @@ authorship and history.
 
 ## Support & Getting Help
 
-- Questions: [GitHub Issues](https://github.com/blackoutmode/docker-mlat-server/issues)
+- Questions: [GitHub Issues](https://github.com/blackoutsecure/docker-mlat-server/issues)
 - Bug Reports: Include Docker version, container logs, and reproduction steps
 - Upstream Documentation: [mlat-server on GitHub](https://github.com/wiedehopf/mlat-server)
 - Community: [LinuxServer.io Discord](https://linuxserver.io/discord)
@@ -553,7 +604,7 @@ Get help:
 ```bash
 docker logs mlat-server                              # View container logs
 docker exec -it mlat-server /bin/bash                # Access container shell
-docker inspect blackoutmode/mlat-server              # Check image details
+docker inspect blackoutsecure/mlat-server            # Check image details
 ```
 
 ## Sponsor & Credits
@@ -569,10 +620,10 @@ Container patterns: [LinuxServer.io](https://linuxserver.io/)
 
 | Resource | Link |
 | --- | --- |
-| Docker Hub | [blackoutmode/mlat-server](https://hub.docker.com/r/blackoutmode/mlat-server) |
+| Docker Hub | [blackoutsecure/mlat-server](https://hub.docker.com/r/blackoutsecure/mlat-server) |
 | Balena Hub | [mlat-server block](https://hub.balena.io/) |
-| GitHub Issues | [Report bugs or request features](https://github.com/blackoutmode/docker-mlat-server/issues) |
-| GitHub Releases | [Download releases](https://github.com/blackoutmode/docker-mlat-server/releases) |
+| GitHub Issues | [Report bugs or request features](https://github.com/blackoutsecure/docker-mlat-server/issues) |
+| GitHub Releases | [Download releases](https://github.com/blackoutsecure/docker-mlat-server/releases) |
 
 ### Upstream & Related
 

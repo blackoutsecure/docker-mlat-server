@@ -26,7 +26,7 @@ jobs:
       old_commit: ${{ steps.compare.outputs.old_commit }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Read tracked upstream state
         id: tracked
@@ -78,10 +78,12 @@ jobs:
           NEW_VERSION: ${{ steps.upstream.outputs.new_version }}
         run: |
           set -euo pipefail
-          echo "old_commit=${OLD_COMMIT}" >> "$GITHUB_OUTPUT"
-          echo "old_version=${OLD_VERSION}" >> "$GITHUB_OUTPUT"
-          echo "new_commit=${NEW_COMMIT}" >> "$GITHUB_OUTPUT"
-          echo "new_version=${NEW_VERSION}" >> "$GITHUB_OUTPUT"
+          {
+            echo "old_commit=${OLD_COMMIT}"
+            echo "old_version=${OLD_VERSION}"
+            echo "new_commit=${NEW_COMMIT}"
+            echo "new_version=${NEW_VERSION}"
+          } >> "$GITHUB_OUTPUT"
 
           if [ "${OLD_COMMIT}" = "${NEW_COMMIT}" ]; then
             echo "✓ No upstream change (commit unchanged: ${NEW_COMMIT})"
@@ -97,7 +99,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
@@ -116,7 +118,7 @@ jobs:
           cat "${TRACK_FILE}"
 
       - name: Create pull request
-        uses: peter-evans/create-pull-request@v7
+        uses: peter-evans/create-pull-request@22a9089034f40e5a961c8808d113e2c98fb63676 # v7
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           commit-message: "chore(upstream): bump mlat-server to ${{ needs.check-upstream.outputs.new_version }}"
@@ -134,6 +136,3 @@ jobs:
             **Upstream diff:** https://github.com/${{ env.UPSTREAM_REPO }}/compare/${{ needs.check-upstream.outputs.old_commit }}...${{ needs.check-upstream.outputs.new_commit }}
 
             Merging this PR will trigger a rebuild via `publish.yml` which clones the upstream branch HEAD at build time.
-          labels: |
-            upstream
-            automated
